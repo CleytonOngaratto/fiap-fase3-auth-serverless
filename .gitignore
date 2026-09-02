@@ -1,0 +1,53 @@
+# Estado do Terraform — NUNCA versionar (contém tudo em texto plano, inclusive a chave RSA que a
+# função lê do SSM para assinar os tokens).
+*.tfstate
+*.tfstate.*
+
+# Diretório de trabalho / providers baixados.
+.terraform/
+
+# Config do backend: depende da conta do Learner Lab (gerada por bootstrap-backend.ps1 no repo 2).
+backend.hcl
+
+# Valores locais. O terraform.tfvars.example É versionado (não casa este padrão) e serve de molde.
+terraform.tfvars
+*.auto.tfvars
+
+# Planos salvos e crash logs.
+*.tfplan
+tfplan
+crash.log
+crash.*.log
+
+# O .terraform.lock.hcl NÃO entra aqui de propósito: ele é versionado para o CI resolver
+# exatamente os mesmos providers que a máquina local.
+
+# ==========================================
+# IDE — configuração de máquina, não de projeto
+# ==========================================
+# O .idea/ é do IntelliJ e traz workspace.xml (posição de janela, abas abertas) e um .iml com
+# caminhos absolutos desta máquina. O repo 4 já ignora do mesmo jeito.
+.idea
+*.iml
+.vscode
+
+# ==========================================
+# Lambda Node.js
+# ==========================================
+node_modules/
+*.zip
+builds/
+
+# Chaves e credenciais. A chave RSA vive no SSM (F9) — PEM em disco é só conveniência de dev.
+*.pem
+.secrets/
+.aws/
+.env
+
+# ==========================================
+# IA / cockpit (moram na pasta-mãe, não neste repo)
+# ==========================================
+CLAUDE.md
+.claude/
+PLAN-FASE3.md
+PROGRESS-FASE3.md
