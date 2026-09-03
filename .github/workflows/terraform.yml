@@ -1,0 +1,228 @@
+# PR para main      -> node test + fmt + init + validate + plan   (nunca aplica)
+# push na main      -> idem + apply -auto-approve
+# workflow_dispatch -> plan | apply | destroy
+#
+# 🔴 As credenciais do AWS Academy são TEMPORÁRIAS (~4h) e incluem session token. Este workflow
+#    FALHA quando a sessão do lab expira, e isso é esperado — não transforme em status check
+#    obrigatório no ruleset, ou todo merge fora do horário do laboratório fica travado.
+
+name: Terraform - Auth Serverless (Lambda + API Gateway)
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "O que executar"
+        type: choice
+        required: true
+        default: plan
+        options: [ plan, apply, destroy ]
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  TF_IN_AUTOMATION: "true"
+  NODE_VERSION: "20"
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # O action acima valida as credenciais ele mesmo (chama sts:GetCallerIdentity para mascarar o
+      # account id), então com o token expirado ele falha ANTES de qualquer step nosso. Um
+      # `if: failure()` aqui é o único lugar onde a mensagem acionável ainda alcança o cenário para o
+      # qual foi escrita. Nos repos 2 e 3 este step vem DEPOIS do action e nunca é executado.
+      - name: Lab session expirada?
+        if: failure()
+        run: |
+          echo "::error::Credencial do AWS Academy expirou ou esta invalida (a sessao dura ~4h)."
+          echo "::error::Abra o lab, atualize ~/.aws/credentials e recole os 3 secrets deste repo."
+          echo "::error::O AWS_SESSION_TOKEN e obrigatorio; sem ele o erro vem como InvalidClientTokenId."
+
+      # Cobre o caso que o action não cobre: token válido, mas sem permissão.
+      - name: Check lab session
+        run: aws sts get-caller-identity
+
+      # `vars.` é repository VARIABLE, não secret — mora em outra aba das configurações e é por
+      # repositório, então não vem junto com os 3 secrets do lab. Sem esta guarda o `init` receberia
+      # `bucket=` vazio e falharia com erro de backend, longe da causa real.
+      - name: Check repository variables
+        run: |
+          if [ -z "${{ vars.TF_STATE_BUCKET }}" ]; then
+            echo "::error::Repository variable TF_STATE_BUCKET nao definida."
+            echo "::error::Settings > Secrets and variables > Actions > Variables (NAO e um secret)."
+            echo "::error::Valor: o bucket de state criado uma unica vez pelo bootstrap-backend.ps1 do repo 2."
+            exit 1
+          fi
+
+      # Este repositório é o ÚLTIMO da ordem (2 -> 3 -> 4 -> 1) e consome o contrato dos três.
+      - name: Check upstream contract (SSM)
+        if: github.event_name != 'workflow_dispatch' || inputs.action != 'destroy'
+        run: |
+          set -euo pipefail
+          missing=0
+          check() {
+            if ! aws ssm get-parameter --name "$1" > /dev/null 2>&1; then
+              echo "::error::Parametro ausente no SSM: $1 — quem publica: $2"
+              missing=1
+            fi
+          }
+          check /fase3/vpc/id              "repo 2 (fiap-fase3-infra-k8s)"
+          check /fase3/vpc/private-subnets "repo 2 (fiap-fase3-infra-k8s)"
+          check /fase3/rds/endpoint        "repo 3 (fiap-fase3-infra-db)"
+          check /fase3/rds/port            "repo 3 (fiap-fase3-infra-db)"
+          check /fase3/rds/db-name         "repo 3 (fiap-fase3-infra-db)"
+          check /fase3/rds/username        "repo 3 (fiap-fase3-infra-db)"
+          check /fase3/rds/client-sg-id    "repo 3 (fiap-fase3-infra-db)"
+          check /fase3/jwt/private-key     "bootstrap manual (sobrevive ao destroy)"
+          if [ "$missing" -eq 1 ]; then
+            echo "::error::Ordem de deploy: 2 -> 3 -> 4 -> 1. Aplique os repositorios anteriores primeiro."
+            exit 1
+          fi
+
+      # 🔴 A armadilha central deste bloco. O /fase3/eks/lb-dns é publicado pelo cd.yml do repo 4, por
+      #    NENHUM Terraform — então nenhum destroy o apaga, e ele sobrevive entre sessões apontando
+      #    para um ELB que já morreu. O apply passaria e o ANY /{proxy+} nasceria devolvendo 503: o
+      #    parâmetro EXISTIR faz parecer que está tudo certo. Sondar o ELB é o que decide.
+      - name: Check EKS LoadBalancer is alive
+        if: github.event_name != 'workflow_dispatch' || inputs.action != 'destroy'
+        run: |
+          set -euo pipefail
+          # Captura antes de fatiar: num `read` alimentado por process substitution o status do
+          # `aws` se perde, e o step seguiria com a variavel vazia como se tivesse dado certo.
+          if ! raw=$(aws ssm get-parameter --name /fase3/eks/lb-dns \
+               --query "Parameter.[Value,LastModifiedDate]" --output text 2>/dev/null); then
+            echo "::error::/fase3/eks/lb-dns ausente. Rode o workflow_dispatch do cd.yml no repo 4."
+            exit 1
+          fi
+          lb=$(echo "$raw" | awk '{print $1}')
+          echo "lb-dns=$lb (publicado em $(echo "$raw" | awk '{print $2}'))"
+
+          code=$(curl -s -o /dev/null -m 15 -w '%{http_code}' \
+                 "http://$lb/carworkshop/v1/q/health/ready" || true)
+          if [ "$code" != "200" ]; then
+            echo "::error::$lb nao responde (codigo $code) — o valor no SSM e de uma sessao anterior."
+            echo "::error::O ANY /{proxy+} nasceria devolvendo 503. Rode o workflow_dispatch do cd.yml"
+            echo "::error::no repo fiap-fase3-app e repita este workflow."
+            exit 1
+          fi
+          echo "LoadBalancer respondeu 200 — o proxy vai apontar para algo vivo."
+
+      # Mesmo check, outra mensagem: no destroy, parâmetro ausente significa que os repos anteriores
+      # já caíram, e mandar "aplique o repo 2 primeiro" para quem está derrubando induz a subir infra
+      # cara.
+      - name: Check contract on destroy
+        if: github.event_name == 'workflow_dispatch' && inputs.action == 'destroy'
+        run: |
+          set -euo pipefail
+          for p in /fase3/vpc/id /fase3/vpc/private-subnets /fase3/rds/client-sg-id /fase3/eks/lb-dns; do
+            if ! aws ssm get-parameter --name "$p" > /dev/null 2>&1; then
+              echo "::error::$p nao existe mais — um repositorio anterior ja foi destruido e o destroy"
+              echo "::error::daqui falha ao ler os data sources. NAO rode apply. Ver 'Recuperacao' no README."
+              exit 1
+            fi
+          done
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # 🔴 ANTES do Terraform, sempre. O archive_file empacota o que está no disco: sem este step o
+      #    zip sai sem pg/jsonwebtoken/@aws-sdk, o apply fica VERDE e a função quebra na primeira
+      #    invocação com `Cannot find module`. Não há devDependencies, então --omit=dev também
+      #    instala tudo o que os testes precisam (o runner de testes é o do próprio Node).
+      - name: Install Lambda dependencies
+        run: npm ci --omit=dev --prefix lambda
+
+      - name: Test Lambda
+        run: node --test tests/
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.4
+          terraform_wrapper: false
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=auth-serverless/terraform.tfstate" \
+            -backend-config="region=${{ env.AWS_REGION }}" \
+            -backend-config="use_lockfile=true" \
+            -backend-config="encrypt=true"
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform plan
+        if: github.event_name != 'workflow_dispatch' || inputs.action != 'destroy'
+        run: |
+          terraform plan -no-color -out=tfplan | tee plan.txt
+          {
+            echo "### Terraform plan"
+            echo '```'
+            tail -n 60 plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Terraform apply
+        if: |
+          (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+          (github.event_name == 'workflow_dispatch' && inputs.action == 'apply')
+        run: terraform apply -auto-approve tfplan
+
+      - name: Terraform destroy
+        if: github.event_name == 'workflow_dispatch' && inputs.action == 'destroy'
+        run: terraform destroy -auto-approve
+
+      # Fecha o loop da armadilha do lb-dns: prova, com o recurso já criado, que a borda responde.
+      - name: Smoke test the API Gateway
+        if: |
+          (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+          (github.event_name == 'workflow_dispatch' && inputs.action == 'apply')
+        run: |
+          set -euo pipefail
+          api=$(terraform output -raw api_endpoint)
+
+          # 400 e a resposta CERTA aqui: prova que o Gateway roteou para a Lambda e que ela executou.
+          # Um CPF valido dependeria do seed do RDS; um invalido so depende do codigo.
+          code=$(curl -s -o /dev/null -m 30 -w '%{http_code}' -X POST "$api/auth" \
+                 -H 'content-type: application/json' -d '{"cpf":"12345678901"}')
+          echo "POST /auth com CPF invalido -> $code (esperado 400)"
+          [ "$code" = "400" ]
+
+          # 401 prova que o /{proxy+} alcancou a app e que ela recusou a requisicao sem token — ou
+          # seja, a integracao HTTP esta viva. 503 aqui seria o lb-dns obsoleto.
+          code=$(curl -s -o /dev/null -m 30 -w '%{http_code}' "$api/carworkshop/v1/tracking/1")
+          echo "GET /tracking/1 sem token pelo Gateway -> $code (esperado 401)"
+          [ "$code" = "401" ]
+
+      - name: Show outputs
+        if: success() && github.event_name != 'pull_request'
+        run: terraform output || true

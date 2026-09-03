@@ -1,0 +1,19 @@
+{
+  "name": "fiap-fase3-auth-lambda",
+  "version": "1.0.0",
+  "description": "Autentica o cliente por CPF: valida os digitos verificadores, confirma a existencia no RDS e assina um JWT RSA com groups=[CUSTOMER].",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test ../tests/"
+  },
+  "dependencies": {
+    "@aws-sdk/client-ssm": "^3.700.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.1"
+  }
+}
