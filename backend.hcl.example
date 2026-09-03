@@ -1,0 +1,11 @@
+# Molde do backend.hcl (gitignored). O bucket já existe — foi criado uma única vez pelo
+# `scripts/bootstrap-backend.ps1` do repo fiap-fase3-infra-k8s; aqui só muda a `key`.
+# O `scripts/preflight.ps1` imprime este bloco já preenchido com o ID da conta do lab.
+#
+# Uso:  terraform init "-backend-config=backend.hcl"   (sem as aspas o PowerShell quebra no '=')
+
+bucket       = "fiap-fase3-tfstate-<ACCOUNT_ID>"
+key          = "auth-serverless/terraform.tfstate"
+region       = "us-east-1"
+use_lockfile = true
+encrypt      = true
