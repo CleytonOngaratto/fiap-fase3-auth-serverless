@@ -350,7 +350,8 @@ uma ENI na subnet e trava a destruição da VPC.
 | `Output refers to sensitive values` | um `aws_ssm_parameter` novo sem `nonsensitive()` em `locals.tf` |
 | `terraform init/plan` com erro **x509** | interceptação TLS local (antivírus com HTTPS scanning). Desligue o scan de HTTPS |
 | `ExpiredToken` / `InvalidClientTokenId` | sessão do lab expirou (~4h). Renove e recole os 3 GitHub Secrets |
-| `Error acquiring the state lock` | lock preso: `aws s3 cp s3://<bucket>/auth-serverless/terraform.tfstate.tflock -` para achar o ID e `terraform force-unlock <ID>` |
+| `Error acquiring the state lock` | dois runs simultâneos (o `concurrency` do workflow evita) **ou** lock preso: `aws s3 cp s3://<bucket>/auth-serverless/terraform.tfstate.tflock -` para achar o ID e `terraform force-unlock <ID>`. ⚠️ Antes de forçar, confira se não há apply em curso: o `CreateFunction` da Lambda retorna em segundos com `State=Pending` e o Terraform espera a ENI da VPC ~4 min — nesse intervalo o state parece vazio e o apply parece morto |
+| `plan` insiste em `1 to change` no `source_code_hash` | o `archive_file` embute o modo dos arquivos no zip, e Windows dá 0666 onde Linux dá 0644: **o mesmo código gera hashes diferentes** entre a máquina local e o runner. É benigno (a função é republicada em segundos), mas alternar apply local e apply do CI nunca dá "No changes" |
 | `verify-offline.ps1`: **conflito de nome de container** | sobraram containers paradas do projeto `fiapchallenge` (Fase 2), que fixam `oficina_app`/`oficina_db`. Remova-as ou suba com `-p <projeto>` e um override de `container_name` |
 | `NativeCommandError` no meio de um script `.ps1` | stderr informativo de executável nativo com `$ErrorActionPreference = 'Stop'`. Use os helpers `Invoke-Probe` / `Invoke-Native` |
 
