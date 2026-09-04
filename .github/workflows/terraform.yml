@@ -25,6 +25,14 @@ on:
 permissions:
   contents: read
 
+# Dois runs simultâneos disputam o lock do state no S3 e um morre com "Error acquiring the
+# state lock" — cenário real num Re-run disparado enquanto o apply anterior ainda espera a ENI da
+# Lambda ficar Active. Sem cancel-in-progress: abortar um apply no meio deixa recursos criados fora
+# do state, que é pior que esperar.
+concurrency:
+  group: terraform-auth-serverless
+  cancel-in-progress: false
+
 env:
   AWS_REGION: us-east-1
   TF_IN_AUTOMATION: "true"
