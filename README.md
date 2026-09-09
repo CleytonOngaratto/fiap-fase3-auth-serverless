@@ -312,7 +312,14 @@ terraform destroy      # segundos
 ⚠️ **Antes do destroy do repo 2:** `kubectl -n car-workshop delete svc car-workshop-api` — o ELB deixa
 uma ENI na subnet e trava a destruição da VPC.
 
-## Decisões (resumo — detalhamento nos RFCs/ADRs do Bloco 7)
+## Decisões (resumo)
+
+Detalhamento na documentação arquitetural do repositório da aplicação,
+[`fiap-fase3-app/docs/arquitetura/`](https://github.com/CleytonOngaratto/fiap-fase3-app/tree/main/docs/arquitetura):
+[RFC-003 — autenticação por CPF](https://github.com/CleytonOngaratto/fiap-fase3-app/blob/main/docs/arquitetura/rfc/RFC-003-auth-cpf-lambda-jwt.md),
+[sequencia.md — o fluxo passo a passo](https://github.com/CleytonOngaratto/fiap-fase3-app/blob/main/docs/arquitetura/sequencia.md),
+[ADR-001 — contrato por SSM](https://github.com/CleytonOngaratto/fiap-fase3-app/blob/main/docs/arquitetura/adr/ADR-001-ssm-vs-terraform-remote-state.md) e
+[ADR-003 — exposição da app](https://github.com/CleytonOngaratto/fiap-fase3-app/blob/main/docs/arquitetura/adr/ADR-003-exposicao-da-app-lb-publico.md).
 
 | Decisão | Motivo |
 |---|---|
