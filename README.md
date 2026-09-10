@@ -33,7 +33,7 @@ CPF ──► API Gateway (POST /auth) ──► Lambda ──► valida CPF ─
 
 ## Arquitetura
 
-Linha cheia = provisionado por **este** repositório. Tracejado = criado por outros blocos.
+Linha cheia = provisionado por **este** repositório. Tracejado = criado pelos outros repositórios.
 
 ```mermaid
 flowchart TB
@@ -72,7 +72,7 @@ flowchart TB
 
 ### 🔴 O contrato do token
 
-A aplicação **já valida** JWT com SmallRye e **não foi alterada** por este bloco. O token da Lambda
+A aplicação **já valida** JWT com SmallRye e **não foi alterada** para receber este token. Ele
 tem que ser aceito por essa validação como ela está:
 
 | Configuração da app | Consequência aqui |
@@ -106,9 +106,10 @@ não é dele**. As alternativas eram liberar o CIDR inteiro da VPC ou o repo 1 m
 | Repos 2, 3 e 4 aplicados | — | sem eles o `plan` falha com `ParameterNotFound` |
 
 > **Não usamos o módulo `terraform-aws-modules/lambda/aws`.** Ele empacota chamando um script
-> **Python** (inclusive no caminho com `build_in_docker`), e a máquina de desenvolvimento do projeto
-> não tem Python. O empacotamento é `data "archive_file"` + `npm ci --omit=dev` — a alternativa que
-> a decisão **F3** do plano já previa. Consequência prática na seção seguinte.
+> **Python** (inclusive no caminho com `build_in_docker`) — um runtime a mais só para empacotar, que
+> nem toda máquina de quem clona este repositório terá. O empacotamento aqui é
+> `data "archive_file"` + `npm ci --omit=dev`, que usa apenas o Node já exigido acima. Consequência
+> prática na seção seguinte.
 
 ## Uso
 
@@ -141,7 +142,7 @@ imprime o `backend.hcl` pronto.
 ```powershell
 Copy-Item backend.hcl.example backend.hcl      # e substitua <ACCOUNT_ID> (o preflight imprime)
 terraform init "-backend-config=backend.hcl"   # as aspas importam no PowerShell
-terraform plan                                 # 12 recursos, nada destruído
+terraform plan                                 # 14 recursos, nada destruído
 terraform apply                                # ~1-2 min
 ```
 
@@ -202,7 +203,7 @@ de uma sessão: **2 → 3 → 4 → 1**.
 
 ### Offline — de graça, e é onde o risco real morre
 
-O risco caro deste bloco não é nuvem: é o token ser recusado pelo SmallRye. Isso se prova **sem AWS**,
+O risco caro deste repositório não é nuvem: é o token ser recusado pelo SmallRye. Isso se prova **sem AWS**,
 contra a aplicação no `docker compose`, por **US$ 0,00**. Os dois scripts abaixo separam três
 problemas que, juntos, custam horas.
 
@@ -237,15 +238,15 @@ as duas direções — `disable` recusado com a mensagem literal do RDS, `requir
 ### Na nuvem — Definition of Done
 
 > **Executado de ponta a ponta em 2026-09-02** na conta do lab: `fmt -check`/`validate` OK ·
-> `plan` = **12 to add** · `apply` = **12 added, 0 changed, 0 destroyed** (a função em 3m58s — o
+> `plan` = **14 to add** · `apply` = **14 added, 0 changed, 0 destroyed** (a função em 3m58s — o
 > tempo é a ENI na VPC, não o zip) · os **5 casos** da matriz abaixo com o status esperado, **todos
-> pelo API Gateway**.
+> pelo API Gateway**. Reverificado em 2026-09-09, também com 14.
 >
 > Evidências que o `curl` sozinho não mostra:
 >
 > | O que | Medido |
 > |---|---|
-> | Execution role | `arn:aws:iam::877240481212:role/LabRole` — **nenhuma IAM role criada** (F1) |
+> | Execution role | a `LabRole` pré-existente da conta, lida por `data source` — **nenhuma IAM role criada** |
 > | Rede | as 2 subnets privadas + **os 2 SGs**: o próprio (443) e o crachá `sg-0ee14…` do repo 3 |
 > | Leitura cifrada do SSM como LabRole | **zero `AccessDenied`** no log da função |
 > | Cache dos segredos e do pool | cold start **890 ms** → invocação quente **5,8 ms** |
@@ -253,11 +254,41 @@ as duas direções — `disable` recusado com a mensagem literal do RDS, `requir
 > | Claims emitidas | `{"sub","iss":"https://oficina-api.com","groups":["CUSTOMER"],"cpf","iat","exp"}`, `exp−iat = 3600`, **sem `aud`** |
 > | Log da função | CPF **mascarado** (`*********00`), nunca o documento cheio |
 > | Access log da stage | as duas rotas registradas: `POST /auth` e `ANY /{proxy+}` |
-> | `X-Trace-Id` do cliente | `EVIDENCIA-5-1` **atravessa o Gateway intacto** e volta na resposta — a decisão de não carimbar preserva a correlação dos Blocos 4b–4e |
+> | `X-Trace-Id` do cliente | `EVIDENCIA-5-1` **atravessa o Gateway intacto** e volta na resposta — a decisão de não carimbar preserva a correlação de ponta a ponta da aplicação |
+
+🔴 **Antes de rodar o caso 2, prepare o banco.** Num RDS recém-criado o caso 2 devolve **404 mesmo
+com um token perfeitamente válido**, e o 404 é a aplicação dizendo *"a OS não existe"* — não falha de
+autenticação. O motivo está nas migrations: o seed do `V1.0.0` insere clientes, veículos, serviços e
+peças, mas **nenhuma linha em `work_orders` e nenhuma em `users`**. Ou seja, não há OS de id 1 para
+consultar, nem administrador para criá-la. E como todo `terraform destroy` do repositório de banco
+recria a instância, isso vale **a cada sessão**, não só na primeira.
 
 ```powershell
 $api = terraform output -raw api_endpoint
 
+# O PS 5.1 remove as aspas duplas ao passar argumento para executável nativo (ver aviso acima),
+# então todo corpo JSON vai por arquivo.
+'{"username":"admin","password":"Admin@123","roles":["ADMIN"]}' | Set-Content -Encoding utf8 signup.json
+'{"username":"admin","password":"Admin@123"}'                   | Set-Content -Encoding utf8 login.json
+'{"customer_id":1,"vehicle_id":1,"service_ids":[1]}'            | Set-Content -Encoding utf8 wo.json
+
+# a. administrador (a criação de OS é rota ADMIN)
+curl.exe -s -X POST "$api/carworkshop/v1/auth/signup" -H "content-type: application/json" -d "@signup.json"
+$admin = (curl.exe -s -X POST "$api/carworkshop/v1/auth/login" -H "content-type: application/json" -d "@login.json" | ConvertFrom-Json).token
+
+# b. a ordem de serviço que passa a ser o id 1
+curl.exe -s -X POST "$api/carworkshop/v1/work-orders" -H "content-type: application/json" `
+  -H "Authorization: Bearer $admin" -d "@wo.json"
+```
+
+> **Por que o signup é `/carworkshop/v1/auth/signup` e não `/auth`?** São duas coisas diferentes que
+> compartilham o prefixo. No Gateway, `POST /auth` é rota de **match exato** para a Lambda
+> ([`apigateway.tf`](apigateway.tf)) — é o login **do cliente por CPF**, e não existe na aplicação.
+> O signup e o login **do administrador** são da aplicação: o `AuthController` é `@Path("/auth")` com
+> `@Path("/signup")`, e o Quarkus serve tudo sob `quarkus.http.root-path=/carworkshop/v1`. Esse
+> caminho cai na rota `ANY /{proxy+}`, que encaminha para o LoadBalancer do EKS.
+
+```powershell
 # 1. caminho feliz -> 200 com JWT
 curl.exe -s -X POST "$api/auth" -H "content-type: application/json" -d '{"cpf":"98765432100"}'
 
@@ -323,7 +354,7 @@ Detalhamento na documentação arquitetural do repositório da aplicação,
 
 | Decisão | Motivo |
 |---|---|
-| `archive_file` + `npm ci` em vez do módulo `terraform-aws-modules/lambda/aws` | o módulo empacota via script Python, ausente na máquina do projeto. Previsto em F3 |
+| `archive_file` + `npm ci` em vez do módulo `terraform-aws-modules/lambda/aws` | o módulo empacota chamando um script Python, o que acrescenta um runtime só para empacotar. O `archive_file` usa o Node que este repositório já exige |
 | Segredos lidos em **runtime**, não por `data source` | um `data "aws_ssm_parameter"` materializa o valor decifrado no state, em texto plano |
 | Não-segredos como **env var resolvida no apply** | host e porta não são secretos, e resolvê-los no apply poupa chamadas de rede no cold start |
 | Acesso ao RDS por **crachá** (`/fase3/rds/client-sg-id`) | nenhum repositório precisa criar recurso dentro de outro; regra mínima, sem abrir o CIDR da VPC |
@@ -334,8 +365,8 @@ Detalhamento na documentação arquitetural do repositório da aplicação,
 | **400** (não 404) para CPF com dígitos inválidos | responder "não encontrado" a um CPF impossível transformaria o endpoint num oráculo de quem está cadastrado |
 | `reserved_concurrent_executions` **não** setado | a AWS recusa reserva que deixe a concorrência não-reservada da conta abaixo de **100**, e o teto do lab é 10 — nenhuma reserva é possível |
 | Log group **explícito** | sem ele a Lambda cria um com retenção infinita que o `destroy` não remove |
-| **Sem** carimbar `X-Trace-Id` na borda | `overwrite` apagaria o header do cliente e `append` produziria `id-cliente,id-gateway`; o id de fora atravessar intacto é a base da correlação provada nos Blocos 4b–4e. O id do Gateway fica no access log |
-| Stage `$default` com `auto_deploy` | ambiente único (F4): não há promoção entre stages, e a URL sai sem prefixo |
+| **Sem** carimbar `X-Trace-Id` na borda | `overwrite` apagaria o header do cliente e `append` produziria `id-cliente,id-gateway`; o id de fora atravessar intacto é a base da correlação de log e trace da aplicação. O id do Gateway fica no access log |
+| Stage `$default` com `auto_deploy` | ambiente único: não há promoção entre stages, e a URL sai sem prefixo |
 | HTTP API, não REST API | mais barato, sobe em segundos e não exige a role de CloudWatch no nível da conta, que o Learner Lab não deixaria criar |
 | `nonsensitive()` nos parâmetros lidos | o provider marca todo `aws_ssm_parameter` como sensitive, e sem isso o `plan` esconde o `integration_uri` e o `DB_HOST` — os campos que a revisão de um plan precisa ver |
 
