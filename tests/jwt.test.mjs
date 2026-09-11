@@ -55,7 +55,7 @@ test("issuer e subject: mesmo formato do JwtTokenAdapter da app", () => {
   assert.equal(token.sub, "98765432100"); // papel do subject(username)
 });
 
-test("F10: groups=[CUSTOMER] e a claim cpf", () => {
+test("groups=[CUSTOMER] e a claim cpf", () => {
   const token = claims(sign());
   // mp.jwt.verify.groups.path=groups — o array é o que vira @RolesAllowed("CUSTOMER") na app.
   assert.deepEqual(token.groups, ["CUSTOMER"]);

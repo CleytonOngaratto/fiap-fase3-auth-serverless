@@ -29,7 +29,7 @@ resource "aws_lambda_permission" "apigw" {
 # `{proxy}` na URI recebe o path capturado pela rota, então /carworkshop/v1/tracking/1 chega ao ELB
 # inteiro. Sem `request_parameters` de propósito: carimbar o X-Trace-Id exigiria `overwrite` (apaga o
 # header do cliente) ou `append` (produz "id-cliente,id-gateway"), e o id de fora atravessar intacto
-# é a propriedade em que a correlação dos Blocos 4b-4e se apoia.
+# é a propriedade em que a correlação de log e trace da aplicação se apoia.
 resource "aws_apigatewayv2_integration" "app" {
   api_id             = aws_apigatewayv2_api.main.id
   integration_type   = "HTTP_PROXY"

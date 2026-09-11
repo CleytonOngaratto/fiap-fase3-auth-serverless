@@ -38,7 +38,8 @@ node_modules/
 *.zip
 builds/
 
-# Chaves e credenciais. A chave RSA vive no SSM (F9) — PEM em disco é só conveniência de dev.
+# Chaves e credenciais. A chave RSA vive no SSM (SecureString) e é lida em runtime pela função;
+# PEM em disco é só conveniência de desenvolvimento.
 *.pem
 .secrets/
 .aws/
