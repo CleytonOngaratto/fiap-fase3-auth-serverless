@@ -65,7 +65,7 @@ function Invoke-Native {
 # montar a linha de comando de um executável nativo: `{"username":"x"}` chega ao curl como
 # `{username:x}`, que a app recusa com 400 — e o sintoma parece regra de negócio, não quoting.
 # (Medido: httpbin devolveu `"data": "{username:probe-x,...}"`.) O `@arquivo` não tem aspas para
-# manglar. Mesma família da armadilha do `--from-literal` registrada no Bloco 4c.
+# manglar. Mesma família da armadilha do `--from-literal` registrada no deploy.
 function Invoke-Api {
     param(
         [Parameter(Mandatory)][string]$Method,

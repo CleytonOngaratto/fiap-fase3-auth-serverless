@@ -5,7 +5,7 @@
 
 .DESCRIPTION
     O RDS deste projeto tem `rds.force_ssl = 1` (parameter group default do Postgres 16, verificado
-    no Bloco 3). O `pg` do Node nasce com `ssl: false` e leva RECUSA do servidor, com um erro que
+    nesta instancia). O `pg` do Node nasce com `ssl: false` e leva RECUSA do servidor, com um erro que
     parece security group:
 
         no pg_hba.conf entry for host "10.0.x.x", user "postgres", database "oficina_db",

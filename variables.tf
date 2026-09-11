@@ -63,8 +63,8 @@ variable "log_retention_days" {
 
 variable "enable_access_logs" {
   description = <<-EOT
-    Access log da stage do API Gateway: é a evidência de que o Gateway roteia (útil no Bloco 6 e na
-    banca). Se o lab negar a permissão, o apply falha com "Insufficient permissions to enable
+    Access log da stage do API Gateway: é a evidência de que o Gateway roteia de fato.
+    Se o lab negar a permissão, o apply falha com "Insufficient permissions to enable
     logging" — aí ponha false e siga; nada mais depende disto.
   EOT
   type        = bool
