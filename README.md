@@ -32,7 +32,7 @@ CPF ──► API Gateway (POST /auth) ──► Lambda ──► valida CPF ─
   tráfego (`ANY /{proxy+}`) para a aplicação no EKS.
 
 > 📖 **Referência da API:** as rotas de negócio são as da aplicação, documentadas no **Swagger UI**
-> embutido nela, em `/carworkshop/v1/swagger-ui` — pelo Gateway, o mesmo caminho atrás do endpoint
+> embutido nela, em `/swagger-ui/` — pelo Gateway, o mesmo caminho atrás do endpoint
 > `ANY /{proxy+}` (veja
 > [fiap-fase3-app](https://github.com/CleytonOngaratto/fiap-fase3-app#documentação-da-api)).
 > O `POST /auth` é a única rota deste repositório, e o contrato completo dela — entradas, códigos e
